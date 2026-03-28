@@ -1,0 +1,71 @@
+{
+  "armorcode": {
+    "base_url": "https://app.armorcode.com"
+  },
+
+  "install_config_defaults": {
+    "GITHUB": {
+      "authType": "TOKEN",
+      "subProductMappingConfig": ["INACTIVE", "DORMANT"],
+      "githubIssuesEnabled": false
+    },
+    "BITBUCKET": {
+      "subProductMappingConfig": ["INACTIVE", "DORMANT"]
+    },
+    "AZURE_REPOS": {
+      "subProductMappingConfig": ["INACTIVE", "DORMANT"]
+    }
+  },
+
+  "scm": [
+    {
+      "_comment": "GitHub Cloud — host_url optional, defaults to https://github.com",
+      "type": "GITHUB",
+      "hosting_type": "Cloud",
+      "pat": "ghp_YOUR_GITHUB_PAT"
+    },
+    {
+      "_comment": "GitHub OnPrem (Enterprise) — host_url required, PAT only",
+      "type": "GITHUB",
+      "hosting_type": "OnPrem",
+      "host_url": "https://github.yourcompany.com",
+      "pat": "ghp_YOUR_GITHUB_ENTERPRISE_PAT"
+    },
+    {
+      "_comment": "Bitbucket Cloud — host_url optional",
+      "type": "BITBUCKET",
+      "hosting_type": "Cloud",
+      "username": "your_username",
+      "password": "your_app_password"
+    },
+    {
+      "_comment": "Bitbucket OnPrem — token auth",
+      "type": "BITBUCKET",
+      "hosting_type": "OnPrem",
+      "host_url": "https://bitbucket.yourcompany.com",
+      "token": "BBDC-your_token"
+    },
+    {
+      "_comment": "Bitbucket OnPrem — basic auth (alternative to token)",
+      "type": "BITBUCKET",
+      "hosting_type": "OnPrem",
+      "host_url": "https://bitbucket.yourcompany.com",
+      "username": "your_username",
+      "password": "your_password"
+    },
+    {
+      "_comment": "Azure DevOps Cloud — host_url optional",
+      "type": "AZURE_REPOS",
+      "hosting_type": "Cloud",
+      "token": "your_ado_pat"
+    },
+    {
+      "_comment": "Azure DevOps OnPrem — host_url and collection required",
+      "type": "AZURE_REPOS",
+      "hosting_type": "OnPrem",
+      "host_url": "https://ado.yourcompany.com",
+      "collection": "DefaultCollection",
+      "token": "your_ado_pat"
+    }
+  ]
+}
