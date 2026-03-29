@@ -119,6 +119,8 @@ Per-entry `install_config` overrides merge on top: code defaults → `install_co
 
 ### SCM Entry Fields
 
+Multiple entries for the same SCM type are supported. Their results are **combined** before diffing against ArmorCode. For example, two Bitbucket OnPrem entries with different hosts will have their projects merged into one set.
+
 | Field | GitHub Cloud | GitHub OnPrem | BB Cloud | BB OnPrem (Token) | BB OnPrem (Basic) | ADO Cloud | ADO OnPrem |
 |-------|-------------|--------------|----------|-------------------|-------------------|-----------|------------|
 | `type` | `GITHUB` | `GITHUB` | `BITBUCKET` | `BITBUCKET` | `BITBUCKET` | `AZURE_REPOS` | `AZURE_REPOS` |
@@ -129,6 +131,8 @@ Per-entry `install_config` overrides merge on top: code defaults → `install_co
 | `password` | — | — | ✅ | — | ✅ | — | — |
 | `token` | — | — | — | ✅ | — | ✅ | ✅ |
 | `collection` | — | — | — | — | — | — | ✅ |
+
+Bitbucket OnPrem supports both token and basic auth. If both are provided, **token takes priority**.
 
 `host_url` is optional for Cloud types — implied defaults:
 - GitHub → `https://github.com`
@@ -167,18 +171,16 @@ Each run gets a timestamp folder so multiple runs per day don't overwrite:
 └── data/
     └── YYYY-MM-DD/
         └── HH-MM-SS/
-            ├── GITHUB_CLOUD/
+            ├── GITHUB/
             │   ├── ac_orgs.json                       # orgs currently in ArmorCode
-            │   ├── scm_orgs.json                      # orgs found in SCM
+            │   ├── scm_orgs.json                      # combined orgs from all config entries
+            │   ├── scm_sources.json                   # per-entry breakdown (which host returned what)
             │   ├── missing_in_ac.json                 # orgs to be created
             │   ├── present_in_ac_missing_in_scm.json  # in AC but not in SCM
             │   ├── would_create.json                  # dry-run: what would be created
             │   └── created.json                       # auto-create: what was created
-            ├── GITHUB_ONPREM/
-            ├── BITBUCKET_CLOUD/
-            ├── BITBUCKET_ONPREM/
-            ├── AZURE_REPOS_CLOUD/
-            └── AZURE_REPOS_ONPREM/
+            ├── BITBUCKET/
+            └── AZURE_REPOS/
 ```
 
 Logs:
