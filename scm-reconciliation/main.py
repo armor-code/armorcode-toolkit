@@ -14,6 +14,7 @@ Docker:
 
 import argparse
 import base64
+from collections import defaultdict
 import json
 import logging
 import os
@@ -167,12 +168,6 @@ def _cleanup_old(parent: Path, days: int = 30) -> None:
 
 def _today() -> str:
     return date.today().strftime(_DATE_FMT)
-
-
-def scm_data_dir(base: Path, scm_key: str, run_ts: str) -> Path:
-    d = base / "data" / _today() / run_ts / scm_key
-    d.mkdir(parents=True, exist_ok=True)
-    return d
 
 
 # ── SCM Clients ──────────────────────────────────────────────────────────────
@@ -445,34 +440,59 @@ def _write_json(path: Path, data: object) -> None:
     path.write_text(json.dumps(data, indent=2))
 
 
-def reconcile(entry: dict, ac: ArmorcodeClient, data_dir: Path,
-              install_cfg_defaults: dict | None, auto_create: bool = False) -> dict:
-    scm_type = entry["type"].upper()
-    hosting = entry["hosting_type"].lower()
-    scm_key = f"{scm_type}_{hosting.upper()}"
-    d = data_dir / scm_key
+def reconcile_group(repo_type: str, entries: list[dict], ac: ArmorcodeClient,
+                    base_dir: Path, run_ts: str, install_cfg_defaults: dict | None,
+                    auto_create: bool = False) -> dict:
+    """
+    Reconciles ALL config entries for a single repo_type.
+    Combines SCM orgs from all entries, fetches AC once, diffs once.
+    Tracks which entry owns which org for creation.
+    """
+    scm_key = repo_type
+    d = base_dir / "data" / _today() / run_ts / scm_key
     d.mkdir(parents=True, exist_ok=True)
 
     summary = {"scm_key": scm_key, "missing_count": 0, "created_count": 0, "ghost_count": 0, "errors": []}
 
+    # 1. Fetch AC installations once for this repo_type
+    hosting = entries[0]["hosting_type"].lower()  # for fetch_installations hosting hint
     try:
-        ac_orgs = ac.fetch_installations(scm_type, hosting)
+        ac_orgs = ac.fetch_installations(repo_type, hosting)
     except Exception as e:
-        log.error("Failed to fetch AC installations for %s: %s", scm_type, e)
+        log.error("Failed to fetch AC installations for %s: %s", repo_type, e)
         summary["errors"].append(str(e))
         return summary
     _write_json(d / "ac_orgs.json", sorted(ac_orgs))
 
-    try:
-        scm_orgs = _fetch_scm_orgs(entry, scm_type, hosting)
-    except Exception as e:
-        log.error("Failed to fetch SCM orgs for %s: %s", scm_key, e)
-        summary["errors"].append(str(e))
-        return summary
-    _write_json(d / "scm_orgs.json", sorted(scm_orgs))
+    # 2. Fetch SCM orgs from ALL entries, combine into one set
+    #    Track org → entry mapping for creation
+    combined_scm_orgs: set[str] = set()
+    org_to_entry: dict[str, dict] = {}  # org_name → config entry that discovered it
+    per_entry_results: list[dict] = []
 
-    missing = scm_orgs - ac_orgs
-    ghosts = ac_orgs - scm_orgs
+    for i, entry in enumerate(entries):
+        entry_hosting = entry["hosting_type"].lower()
+        entry_label = entry.get("host_url", entry["type"])
+        scm_type = entry["type"].upper()
+        try:
+            orgs = _fetch_scm_orgs(entry, scm_type, entry_hosting)
+            log.info("%s [%s]: fetched %d orgs", scm_key, entry_label, len(orgs))
+            per_entry_results.append({"source": entry_label, "count": len(orgs), "orgs": sorted(orgs)})
+            for org in orgs:
+                if org not in org_to_entry:
+                    org_to_entry[org] = entry
+            combined_scm_orgs |= orgs
+        except Exception as e:
+            log.error("Failed to fetch SCM orgs from %s: %s", entry_label, e)
+            summary["errors"].append(f"{entry_label}: {e}")
+            per_entry_results.append({"source": entry_label, "error": str(e)})
+
+    _write_json(d / "scm_orgs.json", sorted(combined_scm_orgs))
+    _write_json(d / "scm_sources.json", per_entry_results)
+
+    # 3. Diff
+    missing = combined_scm_orgs - ac_orgs
+    ghosts = ac_orgs - combined_scm_orgs
     _write_json(d / "missing_in_ac.json", sorted(missing))
     _write_json(d / "present_in_ac_missing_in_scm.json", sorted(ghosts))
     summary["missing_count"] = len(missing)
@@ -481,9 +501,7 @@ def reconcile(entry: dict, ac: ArmorcodeClient, data_dir: Path,
     if ghosts:
         log.warning("%s: %d orgs in ArmorCode but absent from SCM: %s", scm_key, len(ghosts), sorted(ghosts))
 
-    install_cfg = _resolve_install_config(scm_type, entry, install_cfg_defaults)
-    created = []
-
+    # 4. Create missing
     if not auto_create:
         if missing:
             log.info("%s: [DRY-RUN] %d installations would be created: %s", scm_key, len(missing), sorted(missing))
@@ -491,13 +509,18 @@ def reconcile(entry: dict, ac: ArmorcodeClient, data_dir: Path,
         _write_json(d / "created.json", [])
         return summary
 
+    created = []
     for org in sorted(missing):
+        entry = org_to_entry.get(org, entries[0])  # use the entry that discovered this org
+        entry_hosting = entry["hosting_type"].lower()
+        scm_type = entry["type"].upper()
+        install_cfg = _resolve_install_config(scm_type, entry, install_cfg_defaults)
         try:
             if scm_type == "GITHUB":
-                result = ac.create_github_bulk([org], sorted(scm_orgs), entry, entry["pat"], install_cfg)
+                result = ac.create_github_bulk([org], sorted(combined_scm_orgs), entry, entry["pat"], install_cfg)
             else:
-                result = ac.create_single(_build_payload(org, entry, scm_type, hosting, install_cfg), install_cfg)
-            created.append({"org": org, "result": result})
+                result = ac.create_single(_build_payload(org, entry, scm_type, entry_hosting, install_cfg), install_cfg)
+            created.append({"org": org, "source": entry.get("host_url", ""), "result": result})
             summary["created_count"] += 1
             log.info("%s: created installation for '%s'", scm_key, org)
         except requests.HTTPError as e:
@@ -548,12 +571,15 @@ def main() -> None:
     install_cfg_defaults = cfg.get("install_config_defaults")
     run_ts = datetime.now().strftime("%H-%M-%S")
 
-    summaries = []
+    groups: dict[str, list[dict]] = defaultdict(list)
     for entry in cfg["scm"]:
-        scm_key = f"{entry['type'].upper()}_{entry['hosting_type'].upper()}"
-        data = scm_data_dir(base, scm_key, run_ts)
-        log.info("Reconciling %s ...", scm_key)
-        summaries.append(reconcile(entry, ac, data.parent, install_cfg_defaults, args.auto_create))
+        groups[entry["type"].upper()].append(entry)
+
+    summaries = []
+    for repo_type, entries in groups.items():
+        log.info("Reconciling %s (%d config entries) ...", repo_type, len(entries))
+        summaries.append(reconcile_group(repo_type, entries, ac, base, run_ts,
+                                         install_cfg_defaults, args.auto_create))
 
     print(f"\n{'=' * 60}")
     print(f"{'SCM':<30} {'Missing':>8} {'Created':>8} {'Ghosts':>8} {'Errors':>8}")
