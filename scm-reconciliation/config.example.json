@@ -39,7 +39,7 @@
       "password": "your_app_password"
     },
     {
-      "_comment": "Bitbucket OnPrem — token auth",
+      "_comment": "Bitbucket OnPrem — token auth (priority: token > basic auth if both provided)",
       "type": "BITBUCKET",
       "hosting_type": "OnPrem",
       "host_url": "https://bitbucket.yourcompany.com",

@@ -130,8 +130,12 @@ def load_config(path: str) -> dict:
                 if not entry.get(f):
                     sys.exit(f"{pfx} Missing '{f}' for BITBUCKET Cloud")
         if scm_type == "BITBUCKET" and hosting == "onprem":
-            if not entry.get("token") and not (entry.get("username") and entry.get("password")):
+            has_token = bool(entry.get("token"))
+            has_basic = bool(entry.get("username") and entry.get("password"))
+            if not has_token and not has_basic:
                 sys.exit(f"{pfx} BITBUCKET OnPrem requires 'token' or 'username'+'password'")
+            if has_token and has_basic:
+                log.warning("%s: Both 'token' and 'username'+'password' provided for BITBUCKET OnPrem. Using token.", pfx)
         if scm_type == "AZURE_REPOS" and not entry.get("token"):
             sys.exit(f"{pfx} Missing 'token' for AZURE_REPOS")
         if scm_type == "AZURE_REPOS" and hosting == "onprem" and not entry.get("collection"):
