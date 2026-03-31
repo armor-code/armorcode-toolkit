@@ -130,7 +130,9 @@ Multiple entries for the same SCM type are supported. Their results are **combin
 | `username` | — | — | ✅ | — | ✅ | — | — |
 | `password` | — | — | ✅ | — | ✅ | — | — |
 | `token` | — | — | — | ✅ | — | ✅ | ✅ |
-| `collection` | — | — | — | — | — | — | ✅ |
+| `collection` | — | — | — | — | — | — | ⚪ optional |
+
+> **Azure DevOps OnPrem**: `collection` is optional. If omitted, all collections are **auto-discovered** via the server API. Provide it only to restrict fetching to a specific collection.
 
 Bitbucket OnPrem supports both token and basic auth. If both are provided, **token takes priority**.
 
