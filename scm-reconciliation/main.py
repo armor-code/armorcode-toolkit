@@ -209,7 +209,7 @@ def bb_fetch_workspaces_cloud(username: str, password: str) -> set[str]:
         resp.raise_for_status()
         body = resp.json()
         for ws in body.get("values", []):
-            if slug := ws.get("slug"):
+            if slug := ws.get("workspace", {}).get("slug"):
                 workspaces.add(slug)
         url = body.get("next")
 
