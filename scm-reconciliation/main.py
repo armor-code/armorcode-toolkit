@@ -286,40 +286,15 @@ def ado_fetch_orgs_cloud(token: str) -> set[str]:
     return set()
 
 
-def ado_fetch_collections_onprem(host_url: str, token: str) -> list[str]:
-    """Discovers all collections on an ADO Server instance."""
+def ado_fetch_collections_onprem(host_url: str, token: str) -> set[str]:
+    """Discovers all collections on an ADO Server instance. Collections are the installation unit for OnPrem."""
     url = f"{host_url.rstrip('/')}/_apis/projectCollections?$top=1000&api-version=7.1-preview.2"
     headers = {"Authorization": f"Basic {_ado_basic_auth(token)}", "Accept": "application/json"}
     resp = requests.get(url, headers=headers, timeout=_TIMEOUT, verify=_SSL_VERIFY)
     resp.raise_for_status()
-    collections = [c["name"] for c in resp.json().get("value", []) if c.get("name")]
-    log.info("Azure OnPrem: discovered %d collections from %s: %s", len(collections), host_url, collections)
+    collections = {c["name"] for c in resp.json().get("value", []) if c.get("name")}
+    log.info("Azure OnPrem: discovered %d collections from %s: %s", len(collections), host_url, sorted(collections))
     return collections
-
-
-def ado_fetch_projects_onprem(host_url: str, token: str, collection: str | None = None) -> set[str]:
-    """Fetches all projects across all auto-discovered collections, or a specific one if provided."""
-    collections = [collection] if collection else ado_fetch_collections_onprem(host_url, token)
-    base = host_url.rstrip("/")
-    headers = {"Authorization": f"Basic {_ado_basic_auth(token)}", "Accept": "application/json"}
-    projects: set[str] = set()
-
-    for col in collections:
-        top, skip = 100, 0
-        while True:
-            resp = requests.get(f"{base}/{col}/_apis/projects?$top={top}&$skip={skip}&api-version=6.0",
-                                headers=headers, timeout=_TIMEOUT, verify=_SSL_VERIFY)
-            resp.raise_for_status()
-            values = resp.json().get("value", [])
-            for proj in values:
-                if name := proj.get("name"):
-                    projects.add(name)
-            if len(values) < top:
-                break
-            skip += top
-
-    log.info("Azure OnPrem: fetched %d total projects from %s", len(projects), host_url)
-    return projects
 
 
 # ── ArmorCode Client ─────────────────────────────────────────────────────────
@@ -413,7 +388,7 @@ def _fetch_scm_orgs(entry: dict, scm_type: str, hosting: str) -> set[str]:
     if scm_type == "AZURE_REPOS":
         if hosting == "cloud":
             return ado_fetch_orgs_cloud(entry["token"])
-        return ado_fetch_projects_onprem(entry["host_url"], entry["token"], entry.get("collection"))
+        return ado_fetch_collections_onprem(entry["host_url"], entry["token"])
     raise ValueError(f"Unsupported SCM type: {scm_type}")
 
 
