@@ -60,11 +60,10 @@
       "token": "your_ado_pat"
     },
     {
-      "_comment": "Azure DevOps OnPrem — host_url and collection required",
+      "_comment": "Azure DevOps OnPrem — collection is optional; all collections auto-discovered if omitted",
       "type": "AZURE_REPOS",
       "hosting_type": "OnPrem",
       "host_url": "https://ado.yourcompany.com",
-      "collection": "DefaultCollection",
       "token": "your_ado_pat"
     }
   ]

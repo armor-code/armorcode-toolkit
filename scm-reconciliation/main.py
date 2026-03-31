@@ -139,8 +139,6 @@ def load_config(path: str) -> dict:
                 log.warning("%s: Both 'token' and 'username'+'password' provided for BITBUCKET OnPrem. Using token.", pfx)
         if scm_type == "AZURE_REPOS" and not entry.get("token"):
             sys.exit(f"{pfx} Missing 'token' for AZURE_REPOS")
-        if scm_type == "AZURE_REPOS" and hosting == "onprem" and not entry.get("collection"):
-            sys.exit(f"{pfx} Missing 'collection' for AZURE_REPOS OnPrem")
 
     return cfg
 
@@ -288,26 +286,15 @@ def ado_fetch_orgs_cloud(token: str) -> set[str]:
     return set()
 
 
-def ado_fetch_projects_onprem(host_url: str, collection: str, token: str) -> set[str]:
-    base = host_url.rstrip("/")
+def ado_fetch_collections_onprem(host_url: str, token: str) -> set[str]:
+    """Discovers all collections on an ADO Server instance. Collections are the installation unit for OnPrem."""
+    url = f"{host_url.rstrip('/')}/_apis/projectCollections?$top=1000&api-version=7.1-preview.2"
     headers = {"Authorization": f"Basic {_ado_basic_auth(token)}", "Accept": "application/json"}
-    top, skip = 100, 0
-    projects: set[str] = set()
-
-    while True:
-        resp = requests.get(f"{base}/{collection}/_apis/projects?$top={top}&$skip={skip}&api-version=6.0",
-                            headers=headers, timeout=_TIMEOUT)
-        resp.raise_for_status()
-        values = resp.json().get("value", [])
-        for proj in values:
-            if name := proj.get("name"):
-                projects.add(name)
-        if len(values) < top:
-            break
-        skip += top
-
-    log.info("Azure OnPrem: fetched %d projects from %s/%s", len(projects), host_url, collection)
-    return projects
+    resp = requests.get(url, headers=headers, timeout=_TIMEOUT, verify=_SSL_VERIFY)
+    resp.raise_for_status()
+    collections = {c["name"] for c in resp.json().get("value", []) if c.get("name")}
+    log.info("Azure OnPrem: discovered %d collections from %s: %s", len(collections), host_url, sorted(collections))
+    return collections
 
 
 # ── ArmorCode Client ─────────────────────────────────────────────────────────
@@ -401,7 +388,7 @@ def _fetch_scm_orgs(entry: dict, scm_type: str, hosting: str) -> set[str]:
     if scm_type == "AZURE_REPOS":
         if hosting == "cloud":
             return ado_fetch_orgs_cloud(entry["token"])
-        return ado_fetch_projects_onprem(entry["host_url"], entry["collection"], entry["token"])
+        return ado_fetch_collections_onprem(entry["host_url"], entry["token"])
     raise ValueError(f"Unsupported SCM type: {scm_type}")
 
 
