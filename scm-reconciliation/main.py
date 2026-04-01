@@ -404,11 +404,10 @@ def _build_payload(org: str, entry: dict, scm_type: str, hosting: str, install_c
         return payload
 
     if hosting == "cloud":
-        tok = _bb_basic_token(entry["username"], entry["password"])
         return {"name": org, "hostingType": "Cloud", "username": entry["username"],
                 "password": entry["password"],
                 "workspace": f"https://api.bitbucket.org/2.0/workspaces/{org}",
-                "repoType": "BITBUCKET", "token": tok}
+                "repoType": "BITBUCKET", "token": entry["password"]}
 
     # BITBUCKET OnPrem
     host = entry["host_url"].rstrip("/")
