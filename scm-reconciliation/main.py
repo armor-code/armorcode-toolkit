@@ -339,6 +339,7 @@ class ArmorcodeClient:
                 "organisation": all_orgs,
                 "repoType": "GITHUB",
                 "account": org,
+                "installationConfig": install_cfg,
             }
             for org in missing
         ]
