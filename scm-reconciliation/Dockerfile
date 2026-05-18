@@ -1,18 +1,35 @@
-FROM alpine:3.21
+FROM alpine:latest
 
-WORKDIR /app
+WORKDIR /usr/src
 
-# Install dependencies
 RUN apk update && \
     apk upgrade && \
-    apk add --no-cache python3 py3-pip && \
-    mkdir -p /tmp/armorcode/log
+    apk --update --no-cache add python3 py3-pip && \
+    apk --update --no-cache upgrade openssl libssl3 libcrypto3 && \
+    python3 -m venv /usr/src/venv && \
+    /usr/src/venv/bin/pip install --upgrade pip && \
+    /usr/src/venv/bin/pip install --no-cache-dir requests gevent urllib3 && \
+    apk del py3-pip && \
+    rm -rf /usr/src/venv/lib/python*/site-packages/pip* && \
+    rm -rf /usr/src/venv/lib/python*/site-packages/setuptools* && \
+    find /usr/src/venv/bin -name 'pip*' -delete
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt --break-system-packages
+RUN addgroup -g 1001 appgroup && adduser -D -u 1001 -G appgroup 1001
 
-COPY . .
-RUN chmod +x entrypoint.sh
+WORKDIR /usr/src/app
 
-ENTRYPOINT ["./entrypoint.sh"]
+COPY entrypoint.sh /usr/src/entrypoint.sh
+RUN chmod +x /usr/src/entrypoint.sh
+
+COPY app/* ./
+
+RUN chmod +x /usr/src/app/worker.py && \
+    mkdir -p /tmp/armorcode/ && \
+    mkdir -p /tmp/armorcode/log/ && \
+    chown -R 1001:1001 /usr/src /tmp/armorcode
+
+USER 1001
+
+ENTRYPOINT ["/usr/src/entrypoint.sh"]
+
 CMD []
