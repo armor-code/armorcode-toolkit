@@ -49,15 +49,21 @@ docker run --rm \
 pip install -r requirements.txt
 
 # Dry-run
-python -W ignore main.py \
+python main.py \
   --config /path/to/config.json \
   --armorcode-api-token <your_bearer_token>
 
 # Auto-create
-python -W ignore main.py \
+python main.py \
   --config /path/to/config.json \
   --armorcode-api-token <your_bearer_token> \
   --auto-create
+
+# With SSL verification enabled (e.g. public cloud endpoints with valid certs)
+python main.py \
+  --config /path/to/config.json \
+  --armorcode-api-token <your_bearer_token> \
+  --ssl-verify
 ```
 
 ---
@@ -69,6 +75,7 @@ python -W ignore main.py \
 | `--armorcode-api-token` | Yes* | — | ArmorCode API Bearer token |
 | `--config` | No | `/config/config.json` | Path to config.json |
 | `--auto-create` | No | `false` | Actually create missing installations. Without this flag, runs in dry-run mode (report only) |
+| `--ssl-verify` | No | `false` | Enable SSL certificate verification for all outbound HTTPS calls. Disabled by default to support self-signed certs in on-prem environments |
 
 *Can also be set via `ARMORCODE_API_TOKEN` environment variable. CLI argument takes priority.
 

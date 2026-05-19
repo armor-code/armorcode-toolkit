@@ -27,9 +27,7 @@ from pathlib import Path
 
 import requests
 
-# Disable SSL verification globally
-requests.packages.urllib3.disable_warnings()
-_SSL_VERIFY = False
+# SSL verification — disabled by default; enable via --ssl-verify CLI flag
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -63,7 +61,6 @@ def _request_with_retry(method: str, url: str, session=None, max_retries: int = 
     """
     import time
     kwargs.setdefault("timeout", _TIMEOUT)
-    kwargs.setdefault("verify", _SSL_VERIFY)
     caller = session or requests
     func = getattr(caller, method)
 
@@ -172,7 +169,7 @@ def _today() -> str:
 
 # GitHub
 
-def github_fetch_orgs(pat: str, host_url: str) -> set[str]:
+def github_fetch_orgs(pat: str, host_url: str, ssl_verify: bool = False) -> set[str]:
     is_cloud = "github.com" in host_url
     base_api = "https://api.github.com" if is_cloud else host_url.rstrip("/") + "/api/v3"
     url = f"{base_api}/user/orgs?per_page=100"
@@ -180,7 +177,7 @@ def github_fetch_orgs(pat: str, host_url: str) -> set[str]:
     orgs: set[str] = set()
 
     while url:
-        resp = requests.get(url, headers=headers, timeout=_TIMEOUT, verify=_SSL_VERIFY)
+        resp = requests.get(url, headers=headers, timeout=_TIMEOUT, verify=ssl_verify)
         resp.raise_for_status()
         for org in resp.json():
             if login := org.get("login"):
@@ -199,13 +196,13 @@ def _bb_basic_token(username: str, password: str) -> str:
     return base64.b64encode(f"{username}:{password}".encode()).decode()
 
 
-def bb_fetch_workspaces_cloud(username: str, password: str) -> set[str]:
+def bb_fetch_workspaces_cloud(username: str, password: str, ssl_verify: bool = False) -> set[str]:
     headers = {"Authorization": f"Basic {_bb_basic_token(username, password)}", "Accept": "application/json"}
     url = "https://api.bitbucket.org/2.0/user/workspaces?pagelen=100"
     workspaces: set[str] = set()
 
     while url:
-        resp = requests.get(url, headers=headers, timeout=_TIMEOUT, verify=_SSL_VERIFY)
+        resp = requests.get(url, headers=headers, timeout=_TIMEOUT, verify=ssl_verify)
         resp.raise_for_status()
         body = resp.json()
         for ws in body.get("values", []):
@@ -218,7 +215,8 @@ def bb_fetch_workspaces_cloud(username: str, password: str) -> set[str]:
 
 
 def bb_fetch_projects_onprem(host_url: str, token: str = None,
-                             username: str = None, password: str = None) -> set[str]:
+                             username: str = None, password: str = None,
+                             ssl_verify: bool = False) -> set[str]:
     base = host_url.rstrip("/")
     if token:
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
@@ -230,7 +228,7 @@ def bb_fetch_projects_onprem(host_url: str, token: str = None,
 
     while True:
         resp = requests.get(f"{base}/rest/api/latest/projects?limit={limit}&start={start}",
-                            headers=headers, timeout=_TIMEOUT)
+                            headers=headers, timeout=_TIMEOUT, verify=ssl_verify)
         resp.raise_for_status()
         body = resp.json()
         for proj in body.get("values", []):
@@ -250,14 +248,14 @@ def _ado_basic_auth(token: str) -> str:
     return base64.b64encode(f":{token}".encode()).decode()
 
 
-def ado_fetch_orgs_cloud(token: str) -> set[str]:
+def ado_fetch_orgs_cloud(token: str, ssl_verify: bool = False) -> set[str]:
     headers = {"Authorization": f"Basic {_ado_basic_auth(token)}", "Accept": "application/json"}
 
     member_id = None
     try:
         resp = requests.get(
             "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.0",
-            headers=headers, timeout=_TIMEOUT, verify=_SSL_VERIFY,
+            headers=headers, timeout=_TIMEOUT, verify=ssl_verify,
         )
         if resp.status_code == 200:
             member_id = resp.json().get("id")
@@ -271,7 +269,7 @@ def ado_fetch_orgs_cloud(token: str) -> set[str]:
     try:
         resp = requests.get(
             f"https://app.vssps.visualstudio.com/_apis/accounts?memberId={member_id}&api-version=7.0",
-            headers=headers, timeout=_TIMEOUT, verify=_SSL_VERIFY,
+            headers=headers, timeout=_TIMEOUT, verify=ssl_verify,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -286,11 +284,11 @@ def ado_fetch_orgs_cloud(token: str) -> set[str]:
     return set()
 
 
-def ado_fetch_collections_onprem(host_url: str, token: str) -> set[str]:
+def ado_fetch_collections_onprem(host_url: str, token: str, ssl_verify: bool = False) -> set[str]:
     """Discovers all collections on an ADO Server instance. Collections are the installation unit for OnPrem."""
     url = f"{host_url.rstrip('/')}/_apis/projectCollections?$top=1000&api-version=7.1-preview.2"
     headers = {"Authorization": f"Basic {_ado_basic_auth(token)}", "Accept": "application/json"}
-    resp = requests.get(url, headers=headers, timeout=_TIMEOUT, verify=_SSL_VERIFY)
+    resp = requests.get(url, headers=headers, timeout=_TIMEOUT, verify=ssl_verify)
     resp.raise_for_status()
     collections = {c["name"] for c in resp.json().get("value", []) if c.get("name")}
     log.info("Azure OnPrem: discovered %d collections from %s: %s", len(collections), host_url, sorted(collections))
@@ -300,10 +298,10 @@ def ado_fetch_collections_onprem(host_url: str, token: str) -> set[str]:
 # ── ArmorCode Client ─────────────────────────────────────────────────────────
 
 class ArmorcodeClient:
-    def __init__(self, base_url: str, token: str) -> None:
+    def __init__(self, base_url: str, token: str, ssl_verify: bool = False) -> None:
         self._base = base_url.rstrip("/")
         self._s = requests.Session()
-        self._s.verify = _SSL_VERIFY
+        self._s.verify = ssl_verify
         self._s.headers.update({
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -378,18 +376,19 @@ def _resolve_install_config(scm_type: str, scm_entry: dict, cfg_defaults: dict |
     return result
 
 
-def _fetch_scm_orgs(entry: dict, scm_type: str, hosting: str) -> set[str]:
+def _fetch_scm_orgs(entry: dict, scm_type: str, hosting: str, ssl_verify: bool = False) -> set[str]:
     if scm_type == "GITHUB":
-        return github_fetch_orgs(entry["pat"], entry["host_url"])
+        return github_fetch_orgs(entry["pat"], entry["host_url"], ssl_verify=ssl_verify)
     if scm_type == "BITBUCKET":
         if hosting == "cloud":
-            return bb_fetch_workspaces_cloud(entry["username"], entry["password"])
+            return bb_fetch_workspaces_cloud(entry["username"], entry["password"], ssl_verify=ssl_verify)
         return bb_fetch_projects_onprem(entry["host_url"], token=entry.get("token"),
-                                        username=entry.get("username"), password=entry.get("password"))
+                                        username=entry.get("username"), password=entry.get("password"),
+                                        ssl_verify=ssl_verify)
     if scm_type == "AZURE_REPOS":
         if hosting == "cloud":
-            return ado_fetch_orgs_cloud(entry["token"])
-        return ado_fetch_collections_onprem(entry["host_url"], entry["token"])
+            return ado_fetch_orgs_cloud(entry["token"], ssl_verify=ssl_verify)
+        return ado_fetch_collections_onprem(entry["host_url"], entry["token"], ssl_verify=ssl_verify)
     raise ValueError(f"Unsupported SCM type: {scm_type}")
 
 
@@ -429,7 +428,7 @@ def _write_json(path: Path, data: object) -> None:
 
 def reconcile_group(repo_type: str, entries: list[dict], ac: ArmorcodeClient,
                     base_dir: Path, run_ts: str, install_cfg_defaults: dict | None,
-                    auto_create: bool = False) -> dict:
+                    auto_create: bool = False, ssl_verify: bool = False) -> dict:
     """
     Reconciles ALL config entries for a single repo_type.
     Combines SCM orgs from all entries, fetches AC once, diffs once.
@@ -462,7 +461,7 @@ def reconcile_group(repo_type: str, entries: list[dict], ac: ArmorcodeClient,
         entry_label = entry.get("host_url", entry["type"])
         scm_type = entry["type"].upper()
         try:
-            orgs = _fetch_scm_orgs(entry, scm_type, entry_hosting)
+            orgs = _fetch_scm_orgs(entry, scm_type, entry_hosting, ssl_verify=ssl_verify)
             log.info("%s [%s]: fetched %d orgs", scm_key, entry_label, len(orgs))
             per_entry_results.append({"source": entry_label, "count": len(orgs), "orgs": sorted(orgs)})
             for org in orgs:
@@ -532,11 +531,16 @@ def main() -> None:
     parser.add_argument("--config", default=_DEFAULT_CONFIG, help="Path to config.json")
     parser.add_argument("--armorcode-api-token", required=False, help="ArmorCode API Bearer token (or set ARMORCODE_API_TOKEN env var)")
     parser.add_argument("--auto-create", action="store_true", default=False, help="Actually create missing installations. Default: dry-run (report only)")
+    parser.add_argument("--ssl-verify", action="store_true", default=False, help="Enable SSL certificate verification for all outbound HTTPS calls. Default: disabled")
     args = parser.parse_args()
 
     api_token = args.armorcode_api_token or os.environ.get("ARMORCODE_API_TOKEN")
     if not api_token:
         sys.exit("[ERROR] --armorcode-api-token argument or ARMORCODE_API_TOKEN env var is required")
+
+    ssl_verify: bool = args.ssl_verify
+    if not ssl_verify:
+        requests.packages.urllib3.disable_warnings()
 
     cfg = load_config(args.config)
     base = init_storage()
@@ -551,10 +555,10 @@ def main() -> None:
     for h in log.handlers:
         h.setFormatter(fmt)
 
-    log.info("Starting reconciliation. Config: %s | Log: %s | Mode: %s",
-             args.config, log_file, "AUTO-CREATE" if args.auto_create else "DRY-RUN")
+    log.info("Starting reconciliation. Config: %s | Log: %s | Mode: %s | SSL verify: %s",
+             args.config, log_file, "AUTO-CREATE" if args.auto_create else "DRY-RUN", ssl_verify)
 
-    ac = ArmorcodeClient(cfg["armorcode"]["base_url"], api_token)
+    ac = ArmorcodeClient(cfg["armorcode"]["base_url"], api_token, ssl_verify=ssl_verify)
     install_cfg_defaults = cfg.get("install_config_defaults")
     run_ts = datetime.now().strftime("%H-%M-%S")
 
@@ -566,7 +570,7 @@ def main() -> None:
     for repo_type, entries in groups.items():
         log.info("Reconciling %s (%d config entries) ...", repo_type, len(entries))
         summaries.append(reconcile_group(repo_type, entries, ac, base, run_ts,
-                                         install_cfg_defaults, args.auto_create))
+                                         install_cfg_defaults, args.auto_create, ssl_verify=ssl_verify))
 
     print(f"\n{'=' * 60}")
     print(f"{'SCM':<30} {'Missing':>8} {'Created':>8} {'Ghosts':>8} {'Errors':>8}")
